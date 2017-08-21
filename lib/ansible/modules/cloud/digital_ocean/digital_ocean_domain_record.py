@@ -25,7 +25,7 @@ author: "Darrel O'Pry (@sprygroup) and James Gaspari (@pogotech)"
 short_description: Create/delete a DNS record in DigitalOcean
 description:
      - Create/delete a DNS record in DigitalOcean.
-version_added: "2.2"
+version_added: "2.4"
 options:
   state:
     description:
@@ -135,9 +135,9 @@ weight:
 
 '''
 
-import sys
+
 import os
-import time
+import traceback
 
 try:
     from dopy.manager import DoError, DoManager
@@ -165,76 +165,56 @@ class DomainRecord(JsonfyMixIn):
     update_attr = __init__
 
     @classmethod
-    def list_all(cls, domain):
-        domain_records = cls.manager.all_domain_records(domain)
-        return map(cls, domain_records)
-
-    # @classmethod
-    # def updates(cls, id, domain, type, data):
-    #     record_type = type
-    #     json = cls.manager.edit_domain_record(domain, id, record_type, data)
-    #     return cls(json)
-
-    @classmethod
-    def destroy(cls, domain, id):
-        json = cls.manager.destroy_domain_record(domain, id)
-        return json
-
-    @classmethod
-    def add(cls, domain, type, data, name=None, priority=None,
-                port=None, weight=None):
-        json = cls.manager.new_domain_record(domain, type, data, name,
-                                             priority, port, weight)
-        return cls(json)
-
-    @classmethod
-    def find_record(cls, domain=None, type=None, data=None, name=None,
-                    priority=None, port=None, weight=None):
-
-        all_records = DomainRecord.list_all(domain)
-
-        for record in all_records:
-            if (record.type == type and record.data == data
-                and record.name == name and record.priority == priority
-                and record.port == port and record.weight == weight):
-                return record
-
-        return False
-
-class Domain(JsonfyMixIn):
-    manager = None
-
-    def __init__(self, domain_json):
-        self.__dict__.update(domain_json)
-
-    @classmethod
     def setup(cls, api_token):
         cls.manager = DoManager(None, api_token, api_version=2)
         DomainRecord.manager = cls.manager
 
     @classmethod
-    def list_all(cls):
+    def list_all_domains(cls):
         domains = cls.manager.all_domains()
         return map(cls, domains)
 
-    # @classmethod
-    # def find(cls, name=None, id=None):
-    #     if name is None and id is None:
-    #         return False
-    #
-    #     domains = Domain.list_all()
-    #
-    #     if id is not None:
-    #         for domain in domains:
-    #             if domain.id == id:
-    #                 return domain
-    #
-    #     if name is not None:
-    #         for domain in domains:
-    #             if domain.name == name:
-    #                 return domain
-    #
-    #     return False
+#### May need to get domain ID from domain list
+    @classmethod
+    def list_all_domain_records(cls, domain_id):
+        domain_records = cls.manager.all_domain_records(domain_id)
+        return map(cls, domain_records)
+
+    @classmethod
+    def updates(cls, domain_id, record_id, record_type, data, name=None, priority=None, port=None, weight=None):
+        record_type = type
+        json = cls.manager.edit_domain_record(domain_id, record_id, record_type, data, name=None, priority=None, port=None, weight=None)
+        return cls(json)
+
+    @classmethod
+    def destroy(cls, domain_id, record_id):
+        json = cls.manager.destroy_domain_record(domain_id, record_id)
+        return json
+
+    @classmethod
+    def add(cls, domain_id, record_type, data, name=None, priority=None,
+                port=None, weight=None):
+        json = cls.manager.new_domain_record(domain_id, record_type, data, name,
+                                             priority, port, weight)
+        return cls(json)
+
+#### work on this this needs to be correct for update and removal
+
+    @classmethod
+    def find_record(cls, domain=None, record_type=None, data=None, name=None,
+                    priority=None, port=None, weight=None):
+
+        all_records = DomainRecord.list_all_domain_records(domain)
+
+        for record in all_records:
+            if (record.type == record_type and record.data == data and
+                record.name == name and record.priority == priority and
+                record.port == port and record.weight == weight):
+                return record
+
+        return False
+
+
 
 def core(module):
     def getkeyordie(k):
@@ -248,7 +228,7 @@ def core(module):
     except KeyError as e:
         module.fail_json(msg='Unable to load %s' % e.message)
 
-    type = getkeyordie("type")
+    record_type = getkeyordie("record_type")
     data = module.params['data']
     name = module.params['name']
     priority = module.params['priority']
@@ -259,16 +239,16 @@ def core(module):
     state = module.params['state']
     domain_name = getkeyordie("domain")
 
-    Domain.setup(api_token)
+    DomainRecord.setup(api_token)
 
     if not domain:
         module.fail_json(msg='Domain not found %s' % domain_name)
 
-    record = DomainRecord.find_record(domain_name, type,
+    record = DomainRecord.find_record(domain_name, record_type,
                 data, name, priority, port, weight)
 
     if state in ('present') and not record:
-        record = DomainRecord.add(domain_name, type, data, name, priority, port, weight)
+        record = DomainRecord.add(domain_name, record_type, data, name, priority, port, weight)
         module.exit_json(changed=True, record=record.to_json())
 
     # elif state in ('present') and record:
@@ -276,7 +256,7 @@ def core(module):
     #     module.exit_json(changed=True, record=record.to_json())
 
     elif state in ('absent') and record:
-        json = DomainRecord.destroy(domain_name, record.id)
+        json = DomainRecord.destroy(domain_name, record_id)
         module.exit_json(changed=True, event=json)
 
     module.exit_json(changed=False, record=record.to_json())
